@@ -4,8 +4,8 @@ library(Matrix)
 library(car)
 library(ivreg)
 library(sandwich)
-library(data.table)
 library(gmm)
+library(dplyr)
 rm(list=ls())
 N <- 25
 T <- 10
@@ -43,7 +43,7 @@ y <- drop(X %*% beta + alpha + errors[,2])
 
 cor(cbind(X,  alpha,errors[,2]))
 
-df <- data.table(state=rep(1:N, each=T),
+df <- data.frame(state=rep(1:N, each=T),
                  year=1:T,
                  y=y,
                  x1=x1, x2=x2, z1=z1, z2=z2)
@@ -63,8 +63,12 @@ linearHypothesis(lm(x1~z1+z2+x2+factor(state)-1, data=df),
                  vcov=\(x){vcovCL(x,df$state)})
 
 var.names <- c("y", "x1", "x2", "z1", "z2")
-df[ , paste0(var.names, ".within") := lapply(.SD, \(x){x-mean(x)}), by=state, .SDcols=var.names]
-
+df <- df %>% 
+  mutate(across(all_of(var.names), 
+                \(x){x-mean(x)}, 
+                .names = "{col}.within"),
+         .by=state)
+    
 Zdot <- with(df, cbind(z1.within, z2.within,x2.within))
 Xdot <- with(df, cbind(x1.within, x2.within))
 ydot <- df$y.within

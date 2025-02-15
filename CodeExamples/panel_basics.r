@@ -1,6 +1,6 @@
 ## data manipulation packages
 library(readstata13)
-library(data.table) 
+library(dplyr) 
 
 ## econometrics packages
 library(lmtest)
@@ -15,26 +15,27 @@ library(modelsummary)
 
 ## checking out the data
 protests <- read.dta13("datasets/Replication_secpol_protestComplete.dta")
-protests <- data.table(protests)
-protests <- protests[order(ccode, year),]
+protests <- protests[order(protests$ccode, protests$year),]
 
 colnames(protests)
 
 ## panel dimenions
 length(unique(protests$ccode))
-summary(protests[, length(year), by = ccode])
+protests %>% 
+  summarize(length(year), .by=ccode) %>% 
+  summary()
+
 
 ## adjust the variables based on their replication file
 
 ## Normalize the latent varaible to be  mean 0, var 1 
-protests[, Protest := scale(mean5)] 
-protests[, nbr_protest := scale(nbr_mean5)] 
-
-## create the controls: lag(log(pop)), lag(log(gdp_pc), lag(excluded population))
-protests[, `:=` (l.ln_pop = shift(log(pop+1)), 
-                 l.ln_gdppc = shift(log(gdp_pc)),
-                 l.lexclpop = shift(lexclpop)),
-         by=ccode]
+protests <- protests %>% 
+  mutate(Protest = scale(mean5),
+         nbr_protest = scale(nbr_mean5)) %>% 
+  mutate(l.ln_pop = lag(log(pop+1)), 
+         l.ln_gdppc = lag(log(gdp_pc)),
+         l.lexclpop = lag(lexclpop),
+         .by=ccode)
 
 ## model formula
 f1 <- Protest~ secretpol_revised + l.ln_pop + l.ln_gdppc  + l12gr+  l.lexclpop+
@@ -51,8 +52,9 @@ protests <- protests[as.numeric(row.names(pooled$model)), ]
 
 ## Let's consider the residual autocorrelation
 ## in choosing standard errors
-protests[, e.hat := pooled$residuals]
-protests[, L.e.hat := shift(e.hat), by =ccode]
+protests$e.hat <- pooled$residuals
+protests <- protests %>% 
+  mutate(L.e.hat = lag(e.hat), .by =ccode)
 summary(lm(e.hat~L.e.hat, data=protests)) #that's pretty high!
 
 
@@ -65,8 +67,8 @@ pooled.boot <- t(replicate(50, {
   idx <- sample(unique(protests$ccode), 
                 size=length(unique(protests$ccode)),
                 replace=TRUE)
-  d <- copy(protests)
-  d <- d[unlist(sapply(idx, \(x){which(d$ccode==x)}))]
+  d <- protests
+  d <- d[unlist(sapply(idx, \(x){which(d$ccode==x)})),]
   pooled.bs <- lm(f1, dat=d)
   pooled.bs$coef
 }))
@@ -75,7 +77,7 @@ round(coeftest(pooled, var(pooled.boot)), 5)
 ## And the clustered bayesian bootstrap
 pooled.bayes.boot <- t(replicate(50, {
   Ti <- table(protests$ccode)
-  d <- copy(protests)
+  d <- protests
   weight <- rexp(length(unique(protests$ccode)))
   weight <- weight/sum(weight)
   d$weight <- rep(weight*length(unique(protests$ccode)), Ti)
@@ -92,10 +94,15 @@ round(coeftest(lsdv, Vcl.lsdv)[1:8,], 4)
 
 ## Within transformation
 var.names <- colnames(pooled$model)
-protests[,paste0(var.names, ".within"):=lapply(.SD, \(x){x- mean(x)}), 
-         by=ccode, .SDcols=var.names ]
+protests <- protests %>% 
+  mutate(across(all_of(var.names), 
+                \(x){x-mean(x)}, 
+                .names = "{col}.within"),
+         .by=ccode)
+
 fwithin <- paste0(var.names[1], ".within ~ -1 + ", 
                   paste0(var.names[-1], ".within", collapse=" + "))
+print(fwithin)
 within1 <- lm(fwithin, data=protests)
 Vcl.within1 <- vcovCL(within1, cluster=protests$ccode)
 round(coeftest(within1, Vcl.within1), 4)
@@ -131,12 +138,18 @@ sigma2.eps <- within2$sigma2 #unbiased and consistent
 sigma2.a <- mean(pooled$residuals^2) -sigma2.eps
 protests$omega.hat <- 1- sqrt(sigma2.eps/(Ti*sigma2.a+sigma2.eps) )
 mean(protests$omega.hat) ## fairly similar on this measure
-protests[,paste0(var.names, ".gls"):=lapply(.SD, \(x){x-omega.hat*mean(x)}), 
-         by=ccode, .SDcols=var.names ]
-protests[,const.gls:=1-omega.hat]
+
+
+protests <- protests %>% 
+  mutate(across(all_of(var.names), 
+                \(x){x-omega.hat*mean(x)}, 
+                .names = "{col}.gls"),
+         .by=ccode)
+protests$const.gls <- 1-protests$omega.hat
+
 fgls <- paste0(var.names[1], ".gls ~ -1 + const.gls + ",
                paste0(var.names[-1], ".gls", collapse=" + "))
-
+print(fgls)
 gls <- lm(fgls, data=protests)
 summary(gls)
 Vcl.gls <- vcovCL(gls, cluster=protests$ccode)
@@ -171,10 +184,16 @@ pchisq(drop(Htest.cl), df=length(within2$coefficients), lower=FALSE)
 
 ### Mundlak--pooled
 Xnames <- colnames(pooled$model)[-1]
-protests[,paste0(var.names, ".bar"):=lapply(.SD, \(x){mean(x)}), 
-         by=ccode, .SDcols=var.names ]
+protests <- protests %>% 
+  mutate(across(all_of(Xnames), 
+                \(x){mean(x)}, 
+                .names = "{col}.bar"),
+         .by=ccode)
+
 mundlak.add <- paste(".~.",paste0("+", Xnames, ".bar",collapse = "" ))
 mundlak.formula <- update(f1, mundlak.add)
+print(mundlak.formula)
+
 mundlak <- lm(mundlak.formula, data=protests)
 Vcl.m <- vcovCL(mundlak, cluster=protests$ccode)
 round(coeftest(mundlak, Vcl.m), 4)
@@ -188,9 +207,11 @@ coef_test(cre, Vcl.cre)
 
 
 ### between
-protests[, Protest.bar := mean(Protest), by=ccode]
+protests <- protests %>% 
+  mutate(Protest.bar = mean(Protest), .by=ccode)
 f.btwn <- as.formula(paste("Protest.bar ~", 
                            paste0(Xnames, ".bar",collapse = " + " ) ))
+print(f.btwn)
 btwn <- lm(f.btwn, data=protests)
 
 cbind(within2$coefficients, mundlak$coef[2:9])
