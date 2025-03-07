@@ -263,8 +263,8 @@ ar.dat <- data.ab %>%
   mutate(L.ehat = lag(ehat),
          L2.ehat = lag(ehat,2)) %>% 
   ungroup()
-summary(lm(ehat~L.ehat, data=ar.dat))
-summary(lm(ehat~L2.ehat, data=ar.dat))
+summary(lm(ehat~L.ehat-1, data=ar.dat))
+summary(lm(ehat~L2.ehat-1, data=ar.dat))
 
 ## Sargan on the first step
 sarganJ <- (t(e.ab1.hat) %*% Z %*% Omega1.hat.inv %*% 
@@ -299,7 +299,8 @@ c(0.07*ab1.hat["D.v2x_corr",], 0.07*sqrt(se.ab1["D.v2x_corr"]^2))
 
 ## One year later about a 5.6% increase
 D1 <- c(1+ab1.hat["Ly",], ab1.hat["D.v2x_corr",])
-c(0.07*(ab1.hat["D.v2x_corr",]+ab1.hat["D.v2x_corr",]*ab1.hat["Ly",]), 
+c(0.07*(ab1.hat["D.v2x_corr",]+
+          ab1.hat["D.v2x_corr",]*ab1.hat["Ly",]), 
   0.07*drop(sqrt(D1 %*% V.ab1[2:1, 2:1] %*% D1)))
 
 
@@ -335,7 +336,7 @@ Z.list <- tapply(lagMat,
                              apply(x[,2:47],1,
                                    \(y){
                                      y <- matrix(na.omit(y), nrow=1)
-                                     if(ncol(y)>2){
+                                     if(ncol(y)>2){ ## number of lags
                                        y <- y[,(ncol(y)-1):ncol(y),drop=FALSE]
                                      }
                                      return(y)
@@ -397,8 +398,8 @@ ar.dat <- data.ab %>%
   mutate(L.ehat = lag(ehat),
          L2.ehat = lag(ehat,2)) %>% 
   ungroup()
-summary(lm(ehat~L.ehat, data=ar.dat))
-summary(lm(ehat~L2.ehat, data=ar.dat))
+summary(lm(ehat~L.ehat-1, data=ar.dat))
+summary(lm(ehat~L2.ehat-1, data=ar.dat))
 
 ## Sargan on the first step -- Not as good as before
 sarganJ <- t(e.ab1.hat) %*% Z %*% 
@@ -449,8 +450,8 @@ ar.dat <- data.ab %>%
   mutate(L.ehat = lag(ehat),
          L2.ehat = lag(ehat,2),
          .by=id)
-summary(lm(ehat~L.ehat, data=ar.dat))
-summary(lm(ehat~L2.ehat, data=ar.dat))
+summary(lm(ehat~L.ehat-1, data=ar.dat))
+summary(lm(ehat~L2.ehat-1, data=ar.dat))
 
 
 ## Sargan on the second step
