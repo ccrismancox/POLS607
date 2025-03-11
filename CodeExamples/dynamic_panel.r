@@ -259,6 +259,7 @@ ar.dat <- data.ab %>%
   filter(year>=1973) %>% 
   select(c(id, year)) %>%
   mutate(ehat =drop(e.ab1.hat)) %>% 
+  mutate(ehat = ifelse(ehat==0, NA, ehat)) %>% 
   group_by(id) %>% 
   mutate(L.ehat = lag(ehat),
          L2.ehat = lag(ehat,2)) %>% 
@@ -394,6 +395,7 @@ ar.dat <- data.ab %>%
   filter(year>=1973) %>% 
   select(c(id, year)) %>%
   mutate(ehat =drop(e.ab1.hat)) %>% 
+  mutate(ehat = ifelse(ehat==0, NA, ehat)) %>% 
   group_by(id) %>% 
   mutate(L.ehat = lag(ehat),
          L2.ehat = lag(ehat,2)) %>% 
@@ -532,7 +534,7 @@ for(i in 1:N){
   v.tilde[[i]] <- v.i/s.eps.i
   lag.coef <- fit0$coefficients[grep(names(fit0$coefficients), pattern="L[1-4].D.y")]
   if(is.null(lag.coef)){lag.coef <- 0}
-  s[i] <- abs(1-sum(lag.coef))
+  s[i] <- 1/abs(1-sum(lag.coef))
   
 }
 S <- mean(s)
