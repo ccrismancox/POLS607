@@ -124,16 +124,16 @@ pchisq(J, lower=FALSE, df=ncol(Zdot)-ncol(Xdot))
 ## What is being minimized? This objective
 g <- function(b, y=y, X=X, Z=Z, W=W){
   ehat <- (y-X%*%b)
-  return(t(ehat) %*% Z  %*% W1 %*% t(Z) %*% ehat/(nrow(Z)^2))
+  return(t(ehat) %*% Z  %*% W %*% t(Z) %*% ehat/(nrow(Z)^2))
 }
 
 Dg <- function(b, y=y, X=X, Z=Z, W=W){
   ehat <- (y-X%*%b)
-  return( -2* t(ehat) %*% Z  %*% W1  %*% t(Z) %*% X/(nrow(Z)^2))
+  return( -2* t(ehat) %*% Z  %*% W  %*% t(Z) %*% X/(nrow(Z)^2))
 } 
 
 gmm.brute <- optim(within.gmm2$coef, g, gr=Dg,
-                   y=ydot,X=Xdot, Z=Zdot, W=W1,
+                   y=ydot,X=Xdot, Z=Zdot, W=W,
                    method="BFGS")
 #Sargan
 c(J, gmm.brute$value *(N*T))
