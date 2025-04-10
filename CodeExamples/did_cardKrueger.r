@@ -4,7 +4,7 @@ library(sandwich)
 library(lmtest)
 library(fixest)
 rm(list=ls())
-ck <- read.csv("Rcode/datasets/card_krueger_full.csv")
+ck <- read.csv("datasets/card_krueger_full.csv")
 
 
 ck <- ck %>% 
@@ -15,9 +15,8 @@ ck <- ck %>%
          Dy=fte2-fte,
          restID=1:nrow(.)) %>% 
   filter(!(is.na(fte) | is.na(fte2) | is.na(wage_st) | is.na(wage_st2)
-           is.na(pmeal) | is.na(pmeal2)))
+           | is.na(pmeal) | is.na(pmeal2)))
 dim(ck)
-
 
 
 fd <- lm(Dy~state, data=ck)
@@ -76,3 +75,74 @@ twfe5<- feols(hrsopen~d|state+wave,
               data=ck.twfe, vcov=~restID)
 summary(twfe4)
 summary(twfe5)
+
+
+
+## DiDiD (triple diff)
+ck.twfe <- ck.twfe %>% 
+  mutate(h = max(wage_st >= 5 & wave == 0), .by=restID) %>%
+  mutate(d2 = 1*(state==1 & wave==1 & h==0),
+         NJ.lo = 1*(state==1 &  h==0),
+         NJ.hi = 1*(state==1 & h==1),
+         PA.lo = 1*(state==0 & h==0),
+         PA.hi = 1*(state==0 & h==1),
+         NJt = 1*(state==1 & wave==1),
+         ht =  1*(h==1 & wave==1))
+
+
+
+tripleD <- lm(fte~ d2+ 
+                NJ.lo + NJ.hi+
+                PA.lo + PA.hi+
+                wave+
+                ht + 
+                NJt-1,
+              data=ck.twfe)
+
+
+NJ.l <- mean(ck.twfe[ck.twfe$state==1 & ck.twfe$wave==0 & ck.twfe$h==0, ]$fte)
+## \alpha_\text{NJ,low} =  19.6269  
+
+
+NJ.h <- mean(ck.twfe[ck.twfe$state==1 & ck.twfe$wave==0 & ck.twfe$h==1, ]$fte)
+## \alpha_\text{NJ,high} =  21.443  
+
+
+
+NJ.T.B.l <- mean(ck.twfe[ck.twfe$state==1 & ck.twfe$wave==1 & ck.twfe$h==0, ]$fte)
+## \beta+ \alpha_\text{NJ,low}+ \alpha'_{NJ,2}+ \tau'
+## 0.2541 + 19.6269 +1.9279 + -1.0526
+
+NJ.T.h <- mean(ck.twfe[ck.twfe$state==1 & ck.twfe$wave==1 & ck.twfe$h==1, ]$fte)
+## \alpha_\text{NJ,high}+ \alpha'_{NJ,2}+\tau'+\gamma
+# 21.4430+ 1.9279 -1.0526 + -2.6648  
+
+
+PA.l <- mean(ck.twfe[ck.twfe$state==0 & ck.twfe$wave==0 & ck.twfe$h==0, ]$fte)
+## \alpha_\text{PA,low} = 23.3289
+
+PA.h <- mean(ck.twfe[ck.twfe$state==0 & ck.twfe$wave==0 & ck.twfe$h==1, ]$fte)
+## \alpha_\text{PA,high} =  24.0435
+
+PA.T.l <- mean(ck.twfe[ck.twfe$state==0 & ck.twfe$wave==1 & ck.twfe$h==0, ]$fte) 
+## \alpha_\text{PA,low} + \tau' + 
+# 23.329+ -1.0526
+
+PA.T.h <- mean(ck.twfe[ck.twfe$state==0 & ck.twfe$wave==1 & ck.twfe$h==1, ]$fte)
+## \alpha_\text{PA,high} + \gamma + \tau'
+## 24.0435+  -2.6648 -1.0526 
+
+
+## D1 removes \alpha_{gi,h} but not tau', gamma, or alpha_{NJ,2}
+NJ2.T.h <- NJ.T.h -  NJ.h  #-1.0526 +1.9279  -2.6648  
+NJ2.T.B.l <- NJ.T.B.l-  NJ.l # -1.0526 +1.9279+0.2541
+PA2.T.h <- PA.T.h -  PA.h #  -1.0526   -2.6648
+PA2.T.l <- PA.T.l-  PA.l #-1.0526
+
+## D2 removes tau and alpha_{NJ,2}, but not gamma
+B.h.l <- NJ2.T.B.l-NJ2.T.h # 0.2541 - -2.6648  
+h.l <- PA2.T.l-PA2.T.h #2.6648 
+
+## D3 removes gamma
+D3 <- B.h.l - h.l
+D3
