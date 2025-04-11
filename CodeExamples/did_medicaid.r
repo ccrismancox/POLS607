@@ -1,17 +1,24 @@
 library(fixest)
 library(car)
 library(ggplot2)
+library(bacondecomp)
 rm(list=ls())
-## Start with just using the 2x2 that is the transition from 2013 to 2014
+## Start with just using the 2x2 that is the 
+## transition from 2013 to 2014
 medicaid <- read.csv("datasets/medicaid_expansion.csv")
-medicaid$G <- ifelse(is.na(medicaid$Implemented), 0, medicaid$Implemented)
+medicaid$G <- ifelse(is.na(medicaid$Implemented),
+                     0, medicaid$Implemented)
 
 df.2by2 <- medicaid %>% 
   filter(G <= 2014) %>% 
   filter(year ==2013 | year==2014) %>% 
-  mutate(treated = ifelse(is.na(Implemented),  0, 1*(Implemented==2014)),
+  mutate(treated = ifelse(is.na(Implemented), 
+                          0, 1*(Implemented==2014)),
          post=treated*(year==2014))
-did.2by2 <- lm(death.rate~post+factor(treated)+factor(year)-1, data=df.2by2)
+
+did.2by2 <- lm(death.rate~post+
+                 factor(treated)+factor(year)-1,
+               data=df.2by2)
 summary(did.2by2)
 
 
@@ -104,3 +111,15 @@ Att.combo <- deltaMethod(event,
                          "(time.1+time.2+time.3+time.4+time.5+time.6+
         time.7+time.8+time.9)/9")
 c(Att.combo[1:2])
+
+
+
+
+
+medicaid <- medicaid %>% 
+  mutate(post=ifelse(year >= G & G!=0, 1,0))
+decomp.med <- bacon(death.rate ~ post,
+                    data = medicaid,
+                    id_var = "state",
+                    time_var = "year")
+decomp.med

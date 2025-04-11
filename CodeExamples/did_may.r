@@ -40,7 +40,7 @@ ggplot(trendDat, aes(x=time,y=likeMayW, color=Treatment)) +
   geom_vline(aes(xintercept = -1), linetype="dashed", alpha=.2)
 
 
-
+mayData$female <- 1*(mayData$gender==1)
 
 Xdemo <- model.matrix(~white+female+conservative-1, data=mayData)
 Xbig <- model.matrix(~post+factor(treatment1)+factor(wave)-1,
