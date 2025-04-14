@@ -6,6 +6,7 @@ library(did)
 library(bacondecomp)
 library(fixest)
 library(dplyr)
+library(gridExtra)
 
 rm(list=ls())
 
@@ -32,6 +33,21 @@ ggplot(castle %>%
   theme_bw(14)+
   theme(legend.position = "bottom")+
   labs(color = "Treatment year")
+
+
+
+#Fixed effect regression using post as treatment variable 
+dd_reg1 <- feols(l_homicide ~ post|sid + year, data = castle)
+summary(dd_reg1)
+decomp <- bacon(l_homicide ~ post,
+                data = castle,
+                id_var = "state",
+                time_var = "year")
+
+## Early v. late: Maybe good
+## Late v. early: Not great
+## Treated v. untreated: good!
+
 
 ### Parallel trends 1
 ### ATT(g,t) 
@@ -72,7 +88,7 @@ for(g in sort(unique(castle$effyear))){
     j <- j+1
     means <- castle %>% 
       mutate(G = ifelse(G==0, Inf, G)) %>% 
-      filter( (G ==g  | G > pmax(g,year)) &
+      filter( (G ==g  | G > max(g,t)) &
                 (year %in% c(t, g-1))) %>% 
       mutate(G = ifelse(G==g, g, 0))%>% 
       summarize(ybar=mean(l_homicide, na.rm=TRUE),
@@ -99,17 +115,17 @@ for(g in sort(unique(castle$effyear))){
   j <- 0
   for(t in 2000:2010){
     j <- j+1
-    means <- castle %>% 
-      mutate(pre = 1*(year < g),
-             t = 1*(year==t),
-             G= 1*(G==g))
-    preMeans <- means %>% filter(pre==1) %>% summarize(ybar=mean(l_homicide), .by=G)
-    tMeans <- means %>% filter(t==1) %>% summarize(ybar=mean(l_homicide), .by=G)
+    att3[i,j] <- castle %>% 
+      mutate(cohort=ifelse(is.na(effyear), 10000, effyear),
+             Ig = 1*(cohort==g) + 2*(cohort>t &cohort!=g),
+             const=1,
+             pre=ifelse(year < g, 1, NA)) %>% 
+      mutate(ybar = mean(l_homicide*pre, na.rm=TRUE), .by=state) %>% 
+      filter(year ==t & Ig > 0) %>% 
+      summarize(Dt = mean(l_homicide - ybar), .by=Ig) %>%
+      summarize(att3 = diff(Dt)) %>%
+      as.numeric()
     
-    att3[i,j] <- (tMeans[tMeans$G==1,]$ybar-
-                    preMeans[preMeans$G==1,]$ybar)-
-      (tMeans[tMeans$G==0,]$ybar-
-         preMeans[preMeans$G==0,]$ybar)
   }
 }
 
@@ -135,6 +151,30 @@ ggplot(plot.df)+
 
 
 
+## The canned version
+castle <- castle %>% 
+  mutate(ifelse(G==0, Inf, G))
+## matches att_1(g,t)
+att1.canned <- att_gt("l_homicide",
+       tname = "year",
+       idname = "sid",
+       gname = "G", 
+       control_group="nevertreated",
+       base_period = "universal",
+       data = castle)
+
+## matches att_2(g,t)
+att2.canned <- att_gt("l_homicide",
+       tname = "year",
+       idname = "sid",
+       gname = "G", 
+       control_group="notyettreated",
+       base_period = "universal",
+       data = castle)
+
+
+
+#### ATT under PT1 is the same as the Sun and Abrahams regression####
 
 castle$time2 <- castle$year-castle$effyear
 gdummies <- model.matrix.lm(~factor(G):factor(time2)-1, 
@@ -168,7 +208,7 @@ summary(sa)
 
 sa$coefficients #same as beta.hat
 
-
+## Aggregation involves weighting by group sizes
 
 att.sa <- sapply(c(-9:-2, 0:5), 
                  \(ell){beta.hat[grep(pattern=paste0("factor\\(time2\\)", ell),
@@ -185,25 +225,46 @@ mapply(\(x,w)weighted.mean(x,w), x=att.sa, w=weights)
 
 
 
+#### wooldridge regression should be close to ATT3 ####
+wooldridge <- castle %>% 
+  mutate(gs = year*(year>=effyear)*(!is.na(effyear)),
+         gs =  ifelse(is.na(effyear)| gs==0, NA, gs),
+         G= ifelse(is.na(effyear), NA, effyear),
+         gs= ifelse(is.na(gs), NA, 
+                    paste0(G,".", gs)))
+
+## confirm we did this right 
+wooldridge %>% 
+  select(year, effyear, gs) %>% 
+  mutate(effyear=ifelse(is.na(effyear), 0, effyear),
+         gs=1-is.na(gs)) %>% 
+  table()
+
+wdummies <- model.matrix.lm(~factor(gs)-1, data=wooldridge, na.action="na.pass")
+wdummies[is.na(wdummies)] <-0 
+
+GS <- expand.grid(G=2005:2009, s=2005:2010)
+GS <- GS[GS$s >= GS$G,]
+GS <- GS[order(GS$G),]
+colnames(wdummies) <- paste0("g", GS$G, ".s", GS$s)
+wooldridge <- cbind(wooldridge, wdummies)
+wool.fit <- feols(l_homicide ~ g2005.s2005 + g2005.s2006 + 
+                    g2005.s2007 + g2005.s2008 + g2005.s2009 + g2005.s2010 + 
+                    g2006.s2006 + g2006.s2007 + g2006.s2008 + g2006.s2009 + 
+                    g2006.s2010 + g2007.s2007 + g2007.s2008 + g2007.s2009 + 
+                    g2007.s2010 + g2008.s2008 + g2008.s2009 + g2008.s2010 + 
+                    g2009.s2009 + g2009.s2010|state+year, data=wooldridge)
+summary(wool.fit)
+
+att3[,-c(1:5)]*(upper.tri(att3[,-c(1:5)],diag = TRUE))
 
 
 
 
 
-#Fixed effect regression using post as treatment variable 
-dd_reg1 <- feols(l_homicide ~ post|sid + year, data = castle)
-summary(dd_reg1)
-decomp <- bacon(l_homicide ~ post,
-                data = castle,
-                id_var = "state",
-                time_var = "year")
-
-## Early v. late: Maybe good
-## Late v. early: Maybe bad? maybe ok?
-## Treated v. untreated: good!
 
 
-## event study version 
+#### "classic" event study version? Is it close?
 dummies <- model.matrix.lm(~factor(time2)-1, data=castle, na.action="na.pass")
 dummies[is.na(dummies)] <- 0 ## this is the interaction for the untreated
 colnames(dummies) <- c(paste0("time.m", 9:1), paste0("time.",0:5))
@@ -227,7 +288,9 @@ g1 <- ggplot(eventPlot)+
   xlab("Time")+
   scale_x_continuous(breaks=-9:5)+
   ylab("Marginal effect")+
-  geom_vline(aes(xintercept = 0), linetype="dashed", alpha=.4)
+  geom_vline(aes(xintercept = 0), linetype="dashed", alpha=.4)+
+  ggtitle("'Classic' event study")+
+  ylim(-.6, .25)
 g1
 
 eventPlot.sa <- data.frame(time=c(-9:-1, 1:5,0),
@@ -242,10 +305,16 @@ g2 <- ggplot(eventPlot.sa)+
   xlab("Time")+
   scale_x_continuous(breaks=-9:5)+
   ylab("Marginal effect")+
-  geom_vline(aes(xintercept = 0), linetype="dashed", alpha=.4)
+  geom_vline(aes(xintercept = 0), linetype="dashed", alpha=.4)+
+  ggtitle("SA estimator")
 g2
 
 
+
+g3 <- ggdid(aggte(att1.canned, "dynamic")) + ggtitle("ATT_1")
+g4 <- ggdid(aggte(att2.canned, "dynamic"))+ ggtitle("ATT_2")
+
+grid.arrange(g1,g2,g3,g4, nrow=2)
 
 
 

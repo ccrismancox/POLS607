@@ -47,7 +47,7 @@ Xbig <- model.matrix(~post+factor(treatment1)+factor(wave)-1,
                      data=mayData)
 e1 <- Xdemo  - Xbig %*% (solve(t(Xbig) %*% Xbig) %*% t(Xbig) %*% Xdemo)
 y <- mayData$likeMayW
-e2 <- y  - e1 %*% (solve(t(e1) %*% e1) %*% t(e1) %*% y)
+e2 <- y  - Xdemo %*% (solve(t(e1) %*% e1) %*% t(e1) %*% y)
 
 cond.Dat <- data.frame(treatment1=Xbig[,3],
                        time= (Xbig[,4] + 2*Xbig[,5])-2,
@@ -79,9 +79,7 @@ ggplot(trendDat2, aes(x=time,y=likeMayW, color=Treatment)) +
   geom_vline(aes(xintercept = -1), linetype="dashed", alpha=.2)
 
 
-
-
-
+### Event version (good for 2xT)
 event <- feols(likeMayW~ treatment.m1+treatment.1|treatment1+wave, 
                data=mayData, vcov=~id)
 summary(event)
@@ -98,7 +96,7 @@ ggplot(eventPlot)+
   ylab("Marginal effect on May's approval") +
   xlab("Time")
 
-## with individual level controls
+## with individual level time-invariant controls
 event2 <- feols(likeMayW~ treatment.m1+treatment.1|id+wave, 
                 data=mayData, vcov=~id)
 summary(event2)

@@ -4,6 +4,9 @@ library(sandwich)
 library(lmtest)
 library(fixest)
 rm(list=ls())
+
+
+#### base line 2x2###
 ck <- read.csv("datasets/card_krueger_full.csv")
 
 
@@ -17,6 +20,7 @@ ck <- ck %>%
   filter(!(is.na(fte) | is.na(fte2) | is.na(wage_st) | is.na(wage_st2)
            | is.na(pmeal) | is.na(pmeal2)))
 dim(ck)
+
 
 
 fd <- lm(Dy~state, data=ck)
@@ -78,7 +82,7 @@ summary(twfe5)
 
 
 
-## DiDiD (triple diff)
+##### DiDiD (triple diff)####
 ck.twfe <- ck.twfe %>% 
   mutate(h = max(wage_st >= 5 & wave == 0), .by=restID) %>%
   mutate(d2 = 1*(state==1 & wave==1 & h==0),
@@ -146,3 +150,89 @@ h.l <- PA2.T.l-PA2.T.h #2.6648
 ## D3 removes gamma
 D3 <- B.h.l - h.l
 D3
+
+
+
+
+
+#### 2x2 with covariates ####
+library(did)
+
+
+ck <- ck %>% 
+  mutate(h = ifelse(wage_st>=5, 1, 0))
+ck.twfe$h <- rep(ck$h, each=2)
+
+## Recheck the base line##
+summary(fd)
+twfe <- feols(fte~d|state+wave,data=ck.twfe, vcov=~restID)
+summary(twfe)
+
+### the questionable approach
+twfe2 <- feols(fte~d+co_owned+h|state+wave,data=ck.twfe, vcov=~restID)
+
+###### A better approach (Regression adjustment)#######
+att_gt(yname="fte",
+       tname="wave",
+       idname="restID",
+       gname="state",
+       data=ck.twfe,
+       est_method="reg",
+       xformla = ~co_owned+h)
+
+twfe2
+
+
+## RA by hand
+ra <- lm(Dy~co_owned+h, data=ck, subset=state==0)
+summary(ra)
+ck$Dra <- predict(ra, newdata=ck)
+
+ck %>% 
+  filter(state==1) %>%
+  summarize(mean(Dy-Dra))
+
+
+###### A better approach (IPW)#######
+
+att_gt(yname="fte",
+       tname="wave",
+       idname="restID",
+       gname="state",
+       data=ck.twfe,
+       est_method="ipw",
+       xformla = ~co_owned+h)
+
+twfe2
+
+
+## IPW by hand
+
+
+ip <- glm(state~co_owned+h, data=ck,family=binomial("logit"))
+summary(ip)
+ck$phat <- predict(ip, newdata=ck, type="response")
+
+ck %>% 
+  mutate(w1 = state/mean(state),
+         w0 = ((1-state)*phat/(1-phat))/mean((1-state)*phat/(1-phat)) ) %>% 
+  summarize(mean((w1-w0)*(Dy)))
+
+###### A better approach (Double robust)#######
+
+
+att_gt(yname="fte",
+       tname="wave",
+       idname="restID",
+       gname="state",
+       data=ck.twfe,
+       est_method="dr",
+       xformla = ~co_owned+h)
+
+twfe2
+
+## DR by hand
+ck %>% 
+  mutate(w1 = state/mean(state),
+         w0 = ((1-state)*phat/(1-phat))/mean((1-state)*phat/(1-phat)) ) %>% 
+  summarize(mean((w1-w0)*(Dy-Dra)))
