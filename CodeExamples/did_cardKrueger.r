@@ -209,7 +209,8 @@ twfe2
 ## IPW by hand
 
 
-ip <- glm(state~co_owned+h, data=ck,family=binomial("logit"))
+ip <- glm(state~co_owned+h, 
+          data=ck,family=binomial("logit"))
 summary(ip)
 ck$phat <- predict(ip, newdata=ck, type="response")
 
