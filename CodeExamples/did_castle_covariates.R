@@ -33,7 +33,8 @@ castle$G <- castle$effyear
 castle$G[is.na(castle$G)] <- Inf
 
 
-UNatt <-RAatt <- IPWatt <- DRatt <- NAtracker<- matrix(0, 5, 11)
+UNatt <-RAatt <- IPWatt <- DRatt <-
+  NAtracker<- matrix(0, 5, 11)
 i <- 0
 for(g in sort(unique(castle$effyear))){
   i <- i +1
@@ -88,7 +89,8 @@ for(g in sort(unique(castle$effyear))){
                       newdata=Z,
                       type="response")
     ## note that did returns an NA if we get 
-    NAtracker[i,j] <- ifelse(any(Z$phat>0.999), NA, 1)
+    NAtracker[i,j] <- ifelse(any(Z$phat>0.999),
+                             NA, 1)
     ##
     
     IPWatt[i,j] <- Z %>%
